@@ -1,6 +1,6 @@
 FROM alpine:latest as build
 
-ARG SQUID_VER=7.4
+ARG SQUID_VER
 
 # Installation des dépendances
 RUN set -x && \
