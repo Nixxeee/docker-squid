@@ -1,9 +1,9 @@
 name: Build and Publish Squid
 on:
   push:
-    branches: [ "main" ] # Se lance à chaque modification du code
+    branches: [ "main" ]
   schedule:
-    - cron: '0 2 * * *' # Se lance automatiquement TOUS LES JOURS à 2h00 du matin
+    - cron: '0 2 * * *'
 
 jobs:
   push_to_registry:
@@ -16,6 +16,14 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v4
 
+      # 1. RÉCUPÉRER LA VERSION D'ABORD
+      - name: Get latest Squid version
+        id: get_version
+        run: |
+          LATEST_VER=$(curl -s https://api.github.com/repos/squid-cache/squid/releases/latest | jq -r .tag_name | sed 's/SQUID_//;s/_/./g')
+          echo "version=$LATEST_VER" >> $GITHUB_OUTPUT
+
+      # 2. SE CONNECTER AU REGISTRY
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -23,19 +31,40 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
+      # 3. VÉRIFIER SI CETTE VERSION EXISTE DÉJÀ
+      - name: Check if image already exists
+        id: check_tag
+        run: |
+          # On tente de télécharger le manifeste de l'image. 
+          # Si docker inspect réussit, l'image existe.
+          if docker manifest inspect ghcr.io/${{ github.repository }}:${{ steps.get_version.outputs.version }} > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Version ${{ steps.get_version.outputs.version }} exists. Skipping build."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Version ${{ steps.get_version.outputs.version }} not found. Starting build."
+          fi
+
+      # 4. PRÉPARER LES METADATA (uniquement si besoin de build)
+      - name: Extract metadata
+        if: steps.check_tag.outputs.exists == 'false' || github.event_name == 'push'
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest
+            type=raw,value=${{ steps.get_version.outputs.version }}
             type=sha
 
+      # 5. BUILD ET PUSH (uniquement si nouvelle version OU modification manuelle du code)
       - name: Build and push Docker image
+        if: steps.check_tag.outputs.exists == 'false' || github.event_name == 'push'
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            SQUID_VER=${{ steps.get_version.outputs.version }}
