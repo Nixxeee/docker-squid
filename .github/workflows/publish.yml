@@ -35,9 +35,11 @@ jobs:
       - name: Check if image already exists
         id: check_tag
         run: |
-          # On tente de télécharger le manifeste de l'image. 
-          # Si docker inspect réussit, l'image existe.
-          if docker manifest inspect ghcr.io/${{ github.repository }}:${{ steps.get_version.outputs.version }} > /dev/null 2>&1; then
+          # 1. Transforme Nixxeee/docker-squid en nixxeee/docker-squid
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          
+          # 2. Utilisation de $REPO_LOWER au lieu de ${{ github.repository }}
+          if docker manifest inspect ghcr.io/$REPO_LOWER:${{ steps.get_version.outputs.version }} > /dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "Version ${{ steps.get_version.outputs.version }} exists. Skipping build."
           else
